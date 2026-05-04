@@ -1,0 +1,31 @@
+{
+  "name": "webmcp",
+  "version": "1.0.0",
+  "description": "WebSocket-based Model Context Protocol implementation in TypeScript",
+  "main": "dist/websocket-server.js",
+  "type": "module",
+  "scripts": {
+    "start-daemon": "node dist/websocket-server.js",
+    "stop-daemon": "node dist/websocket-server.js --quit",
+    "start-mcp-client": "node dist/websocket-server.js --mcp",
+    "start-foreground": "node dist/websocket-server.js --foreground",
+    "authorize": "node dist/websocket-server.js --new",
+    "build": "node build.js",
+    "dev": "tsx src/websocket-server.ts --foreground"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "dotenv": "^16.4.1",
+    "env-paths": "^3.0.0",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0"
+  }
+}
