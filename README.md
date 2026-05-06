@@ -15,16 +15,16 @@ The system consists of three main parts working together:
 ```mermaid
 graph TD
     subgraph "AI Environment"
-        A["AI Agent / Antigravity"] <-> |"MCP Protocol"| B["MCP Server Bridge"]
+        A["AI Agent / Antigravity"] --- |"MCP Protocol"| B["MCP Server Bridge"]
     end
 
     subgraph "Local Machine"
-        B <-> |"WebSocket /mcp"| C["Relay Hub Port 9000"]
+        B --- |"WebSocket /mcp"| C["Relay Hub Port 9000"]
     end
 
     subgraph "Browser"
-        C <-> |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
-        D <-> |"JavaScript"| E["Design System / Web App"]
+        C --- |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
+        D --- |"JavaScript"| E["Design System / Web App"]
     end
 ```
 
