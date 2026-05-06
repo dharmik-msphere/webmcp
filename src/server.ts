@@ -12,6 +12,75 @@ import {
 import WebSocket from 'ws';
 import { generateNewRegistrationToken } from './tokens.js';
 
+/** Always advertised so clients can obtain a browser token even if the relay has no registered tools yet. */
+const INTERNAL_WEBMCP_TOOLS = [
+    {
+        name: '_webmcp_get-token',
+        description: 'Retrieve a token to connect a website for WebMCP.',
+        inputSchema: { type: 'object', properties: {} },
+    },
+    {
+        name: '_webmcp_define-mcp-tool',
+        description: 'Define a new tool manually via MCP. Advanced use.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                name: { type: 'string' },
+                description: { type: 'string' },
+                inputSchema: { type: 'object' },
+            },
+            required: ['name', 'description', 'inputSchema'],
+        },
+    },
+] as const;
+
+function waitForRelayWebSocket(
+    socket: WebSocket,
+    wsUrl: string,
+    timeoutMs: number,
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (socket.readyState === WebSocket.OPEN) {
+            resolve();
+            return;
+        }
+        const timer = setTimeout(() => {
+            cleanup();
+            reject(
+                new Error(
+                    `Timed out after ${timeoutMs}ms waiting for WebMCP relay (${wsUrl}). Is the hub running on port 9000?`,
+                ),
+            );
+        }, timeoutMs);
+
+        function cleanup() {
+            clearTimeout(timer);
+            socket.off('open', onOpen);
+            socket.off('error', onError);
+            socket.off('close', onClose);
+        }
+
+        function onOpen() {
+            cleanup();
+            resolve();
+        }
+
+        function onError(err: Error) {
+            cleanup();
+            reject(err);
+        }
+
+        function onClose() {
+            cleanup();
+            reject(new Error(`WebSocket to WebMCP relay closed before opening (${wsUrl})`));
+        }
+
+        socket.once('open', onOpen);
+        socket.once('error', onError);
+        socket.once('close', onClose);
+    });
+}
+
 export async function runMcpServer(token: string) {
     if (!token) {
         console.error("No token provided to runMcpServer");
@@ -36,10 +105,6 @@ export async function runMcpServer(token: string) {
             resources: {},
             sampling: {}
         }
-    });
-
-    ws.on('open', () => {
-        wsReady = true;
     });
 
     ws.on('close', () => {
@@ -100,33 +165,12 @@ export async function runMcpServer(token: string) {
     mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
         try {
             const response = await sendRequestToWs({ type: 'listTools' });
-            const tools = response.tools || [];
-            
-            // Add internal tools
-            tools.push({
-                name: "_webmcp_get-token",
-                description: "Retrieve a token to connect a website for WebMCP.",
-                inputSchema: { type: "object", properties: {} }
-            });
-
-            tools.push({
-                name: "_webmcp_define-mcp-tool",
-                description: "Define a new tool manually via MCP. Advanced use.",
-                inputSchema: { 
-                    type: "object", 
-                    properties: {
-                        name: { type: "string" },
-                        description: { type: "string" },
-                        inputSchema: { type: "object" }
-                    },
-                    required: ["name", "description", "inputSchema"]
-                }
-            });
-
+            const relayTools = response.tools || [];
+            const tools = [...relayTools, ...INTERNAL_WEBMCP_TOOLS];
             return { tools };
         } catch (e: any) {
-            console.error("Error listing tools:", e);
-            return { tools: [] };
+            console.error('Error listing tools:', e);
+            return { tools: [...INTERNAL_WEBMCP_TOOLS] };
         }
     });
 
@@ -181,6 +225,14 @@ export async function runMcpServer(token: string) {
     });
 
     // We can implement prompt, resource, sampling similarly...
+
+    try {
+        await waitForRelayWebSocket(ws, wsUrl, 15_000);
+        wsReady = true;
+    } catch (e) {
+        console.error('Failed to connect MCP bridge to WebMCP relay:', e);
+        process.exit(1);
+    }
 
     const transport = new StdioServerTransport();
     await mcpServer.connect(transport);

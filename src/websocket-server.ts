@@ -1,6 +1,8 @@
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { readFile } from 'fs/promises';
+import { fileURLToPath } from 'url';
 import {
     CONFIG,
     DEFAULT_PORT,
@@ -55,7 +57,7 @@ function getQueryParam(urlStr: string, param: string): string | null {
 export async function main() {
     await ensureConfigDir();
     await loadAuthorizedTokens();
-    loadServerTokenFromEnv();
+    await loadServerTokenFromEnv();
 
     const args = process.argv.slice(2);
     let port = DEFAULT_PORT;
@@ -88,9 +90,38 @@ export async function main() {
         return;
     }
 
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+
     // Start WebSocket Server Hub
-    const httpServer = createServer((req, res) => {
-        res.writeHead(200);
+    const httpServer = createServer(async (req, res) => {
+        const url = req.url || '/';
+        const path = getPathFromUrl(url);
+
+        // Serve the webmcp.js browser widget
+        if (path === '/webmcp.js') {
+            try {
+                // Determine path to dist/webmcp.js (assuming we are running from dist/websocket-server.js)
+                const jsPath = join(__dirname, 'webmcp.js');
+                const jsContent = await readFile(jsPath, 'utf8');
+                res.writeHead(200, {
+                    'Content-Type': 'application/javascript',
+                    // Allow CORS so any website can fetch the widget script
+                    'Access-Control-Allow-Origin': '*'
+                });
+                res.end(jsContent);
+            } catch (e) {
+                console.error("Error serving webmcp.js:", e);
+                res.writeHead(500);
+                res.end('Internal Server Error');
+            }
+            return;
+        }
+
+        res.writeHead(200, {
+             // Allow CORS
+             'Access-Control-Allow-Origin': '*'
+        });
         res.end('WebMCP Relay Server is running.');
     });
 
@@ -127,14 +158,17 @@ export async function main() {
 
     httpServer.listen(port, () => {
         console.error(`WebSocket server running at ws://localhost:${port}`);
+        console.error(`Server Token: ${serverToken}`);
     });
 }
 
 function handleRegistration(ws: WebSocket) {
+    console.error('New registration request');
     ws.once('message', async (data) => {
         try {
             const decoded = Buffer.from(data.toString(), 'base64').toString('utf8');
             const payload = JSON.parse(decoded);
+            console.error(`Registering host: ${payload.host}`);
             
             // In a real app we'd validate payload.token matches what we generated.
             // For now, accept and generate a session token.
@@ -151,6 +185,7 @@ function handleRegistration(ws: WebSocket) {
             }));
             
         } catch (e) {
+            console.error(`Registration error: ${e}`);
             ws.send(JSON.stringify({ type: 'error', message: 'Invalid registration' }));
             ws.close();
         }
@@ -158,6 +193,7 @@ function handleRegistration(ws: WebSocket) {
 }
 
 function setupMcpConnection(ws: WebSocket) {
+    console.error('New MCP connection authorized');
     if (!channels[MCP_PATH]) channels[MCP_PATH] = new Set();
     channels[MCP_PATH].add(ws);
 

@@ -77,12 +77,22 @@ export async function saveServerTokenToEnv(token: string): Promise<void> {
     }
 }
 
-export function loadServerTokenFromEnv(): void {
+export async function loadServerTokenFromEnv(): Promise<void> {
     try {
-        // Try to load from our specific .env file if it exists, otherwise rely on process.env
-        // In a real Node app we'd use 'dotenv' to parse this file, which we do in the main entrypoint
-        if (!serverToken && process.env.WEBMCP_SERVER_TOKEN) {
+        if (process.env.WEBMCP_SERVER_TOKEN) {
             serverToken = process.env.WEBMCP_SERVER_TOKEN;
+            return;
+        }
+
+        // Try to load from our specific .env file if it exists
+        try {
+            const envContent = await readFile(ENV_FILE, 'utf8');
+            const match = envContent.match(/^WEBMCP_SERVER_TOKEN=(.*)$/m);
+            if (match && match[1]) {
+                serverToken = match[1].trim();
+            }
+        } catch (e: any) {
+            if (e.code !== 'ENOENT') throw e;
         }
     } catch (e) {
         console.error('Error loading server token:', e);
