@@ -25,9 +25,6 @@ graph TD
     subgraph "Browser"
         C --- |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
         D --- |"JavaScript"| E["Design System / Web App"]
-    subgraph "Browser"
-        C --- |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
-        D --- |"JavaScript"| E["Design System / Web App"]
     end
 ```
 
