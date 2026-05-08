@@ -25,15 +25,23 @@ graph TD
     subgraph "Browser"
         C --- |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
         D --- |"JavaScript"| E["Design System / Web App"]
+    subgraph "Browser"
+        C --- |"WebSocket /{channel}"| D["WebMCP Browser Widget"]
+        D --- |"JavaScript"| E["Design System / Web App"]
     end
 ```
+
+### Detailed Architecture Breakdown
+*   **The Relay Hub (Multiplexer)**: Acts as a central state manager and message router. It manages a `Tools Registry` that aggregates capabilities from all connected browser tabs. By using a WebSocket server, it provides the full-duplex communication required for the AI to "push" actions to the browser.
+*   **The MCP Server Bridge (Protocol Adapter)**: Translates between the standard Model Context Protocol (used by AI agents) and the custom WebMCP WebSocket protocol. It handles JSON-RPC request/response cycles and ensures that tool definitions are strictly typed according to the MCP spec.
+*   **The Browser Widget (Executor)**: The only component with access to the DOM. It uses a **Declarative Scraper** to automatically turn HTML forms into AI tools and an **Imperative API** for manual tool registration. It maintains a secure WebSocket channel to the Hub, authenticated via a unique session token.
 
 ---
 
 ## 2. Detailed Flow Diagrams
 
 ### A. Connection & Registration Flow
-This flow happens when you first set up the connection between your browser and the AI.
+This flow represents the "Trust Handshake" between the AI environment and the local browser.
 
 ```mermaid
 sequenceDiagram
@@ -59,8 +67,14 @@ sequenceDiagram
     H->>H: Store tool in Tools Registry
 ```
 
+### Deep-Dive: The Registration Handshake
+1.  **Token Generation**: The `_webmcp_get-token` tool is a built-in MCP tool that generates a cryptographically signed registration token. This token is restricted to the local network and has a short TTL (Time-To-Live).
+2.  **Exchange (The /register endpoint)**: The Browser Widget does not connect directly to a tool channel. It first hits the `/register` endpoint to prove it has the registration token.
+3.  **Session Persistence**: Upon successful validation, the Hub generates a long-lived **Session Token** mapped to the browser's hostname (e.g., `localhost:3000`). This token is stored in the Hub's `.webmcp-tokens.json` and the browser's `localStorage`, allowing the connection to auto-recover after page refreshes or browser restarts.
+4.  **Discovery**: Once the WebSocket moves to the `/channel` phase, the Widget "flushes" its tool registry to the Hub. The Hub then notifies the MCP Bridge, making the tools immediately available to the AI Agent.
+
 ### B. Tool Execution Flow
-This flow happens when the AI decides to perform an action (like opening a modal).
+This flow tracks a single atomic action initiated by the AI.
 
 ```mermaid
 sequenceDiagram
@@ -80,6 +94,11 @@ sequenceDiagram
     H->>M: JSON: toolResponse
     M-->>A: Result: "Modal opened successfully"
 ```
+
+### Deep-Dive: Execution & State Consistency
+*   **Request ID Tracking**: Every tool call is assigned a unique `req_id` (e.g., `req_123`). The Relay Hub maintains an active map of pending requests. This allows the system to handle multiple parallel tool calls (e.g., filling multiple fields at once) without message cross-talk.
+*   **Event Loop Integration**: When the Browser Widget receives a `callTool` request, it executes the tool's `execute()` function within the browser's main thread. If the tool triggers a navigation or a complex UI change, the function returns a Promise that only resolves once the UI state is stable.
+*   **Feedback Loop**: The result returned to the AI is not just a string; it can be structured JSON data representing the new state of the page (e.g., "Form submitted, current URL is /dashboard"). This allows the AI to update its internal model of the application and decide on its next move.
 
 ---
 
